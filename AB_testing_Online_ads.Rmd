@@ -1,0 +1,147 @@
+---
+title: "causal_hw2"
+author: "Jessica Cheng, Claire Tsao"
+date: "2023-10-06"
+output:
+  pdf_document: default
+---
+## Background
+Star Digital, a multimedia video service provider with an annual advertising budget exceeding $100 million, has been increasingly focusing on online advertising. To assess the effectiveness of their digital display advertising, Star Digital conducted a controlled experiment. 
+
+## Business Goal
+The primary business goal is to assess the effectiveness of online advertising and measure the causal impact of displaying Star Digital's advertisements on sales conversions. The specific objectives are if the ads will increase the number of package sales or not.
+
+*We conducted the A/B testing experiment to run logistic regression test on the Star Digital advertising campaign on six websites.*
+
+## Experiment Design
+To overcome challenges in measuring digital campaigns, Star Digital implemented a controlled experiment for their marketing campaign. The campaign was executed on six different websites, with the primary goal of boosting subscription sales. The experiment comprised two main treatment variations:
+
+1.Customer Group Split:
+
+Star Digital divided its customer base into treatment and control groups, with a 90%-10% split.
+
+- *Treatment Group*: This group will be exposed to Star Digital's online advertisements.
+
+- *Control Group*: This group will not be exposed to Star Digital's advertisements.(but charity organizations)
+
+2.Key questions:
+
+- Is online advertising effective for Star Digital?
+
+- Does the frequency of advertising impact purchase behavior?
+
+- Which websites should Star Digital prioritize for advertising, including whether to invest in Site 6 compared to Sites 1 through 5?
+
+## Analysis Performed
+Read the data set into the file and find out the summary statistic of this data set - star
+```{r,warning = FALSE}
+library(dplyr)
+library(ggplot2)
+star <- read.csv("star_digital_advertising.csv")
+## sum the impression
+star <- star %>% rowwise() %>% mutate(tot_imp = sum(imp_1,imp_2, imp_3, imp_4, imp_5, imp_6))
+## sum the first five impression
+star <- star %>% rowwise() %>% mutate(imp1to5 = sum(imp_1,imp_2, imp_3, imp_4, imp_5))
+                                      
+summary(star)
+```
+
+### Explore the star data
+1. Find if there is any missing value
+```{r}
+missing_value <- colSums(is.na(star))
+missing_value
+```
+- Based on the output result, there is no missing value in this data set.
+
+2. Randomization Check
+```{r}
+t.test(star$tot_imp ~ star$test)
+```
+- The results indicate the average impressions for both test and control are similar and they are not significantly different from each other.
+
+3. Sample size determination: 
+Use "power.t.test" function helps business design experiments by calculating the minimum sample size.
+- We set delta equal to 0.2, meaning that we want to observe at least 20% increase in the likelihood of purchase or impression.
+- Set the H0: beta1 = 0 and test H0 at 5% level of significance that wee allow 5% of type 1 error(Falsely reject hypothesis when it is true)
+
+By using "power.t.test", we can calculate the minimum sample size to conclude the effective experiment is 1570 in each groups(control and treatment).
+
+```{r}
+power.t.test(n= NULL, delta = 0.1, sd= 1, sig.level=0.05, power=0.8,
+type = "two.sample", alternative = "two.sided")
+```
+Check the sample numbers: 0 indicate control group, 1 indicate treatment group
+```{r}
+sample_count <- table(star$test)
+sample_count
+```
+
+### Concerns that need to be address
+1. Selection Bias: Star Digital mitigated selection bias by randomly assigning treatment and control groups from the entire population and randomly selecting the dataset. This approach minimizes bias, and we confirmed it through randomization checks.
+
+2. Omitted Variable Bias: The analysis only includes impression-related data, potentially omitting external variables correlated with impressions and purchase decisions.
+
+3. Simultaneity Bias: There is no evidence to suggest that subscribing to the package causes an increase in ad views, eliminating simultaneity bias.
+
+4. Measurement Error: We assume no measurement error, as tracking impressions at the user level is straightforward.
+
+
+### Q1: Is online advertising effective for Star Digital?
+#### Goal: Who be exposed to Star Digital's advertisements would increase the number of package sales or not
+
+Use t.test function: a powerful tool used to compare two groups of data and determine if there is a significant difference between them.
+```{r}
+t.test(purchase ~ test, star)
+```
+The p-value helps assess the statistical significance of the observed difference. Here, the p-value(0.06139) is slightly greater than the significance level of 0.05, indicating that there were some difference between two groups, but the evidence is not very strong. Showing ads increases the probability of purchase of each customer by **3.95%**.[(0.504-0.485)/0.485*100]
+
+```{r}
+model_1 = glm(purchase~test, data=star, family = "binomial")
+summary(model_1)
+```
+In the regression, the coefficient for 'test' is 0.0767, meaning that being part of the test group would increase the odds of purchasing Star Digital by **7.98%**.
+
+### Q2: Is there a frequency effect of advertising on purchase? In particular, the question is whether increasing the frequency of advertising increases the probability of purchase?
+
+```{r}
+ggplot(star, aes(x = tot_imp)) +
+  geom_histogram(binwidth = 100) + 
+  labs(title = "Distribution of tot_imp",
+       x = "tot_imp",
+       y = "Frequency")
+```
+Since the distribution of tot_imp is skewed, in the following logistic regression model we will use log transformation.
+
+```{r}
+summary(glm(purchase ~ test*log(tot_imp), family="binomial", star))
+```
+When the frequency of Star Digital advertising (impressions) increases, there is a 7.35% increase in the odds of making a purchase for customers in the treatment group (those who saw the Star Digital's ads) compared to customers in the control group (those who did not see the ads). However, with p-value = 0.055, slightly above the typical 0.05 significant level, this suggests that the treatment effect may depend on the level of total impressions, but the evidence is not very strong.
+
+### Q3: Which sites should Star Digital advertise on? In particular, should it put its advertising dollars in Site 6 or in Sites 1 through 5? 
+* Background: The cost of advertising at Sites 1 through 5 is $25 per thousand impressions, and Sites 6 is $20. A purchase results in a lifetime contribution of $1,200 for Star Digital. Option 1 is to put ads dollars in Sites 1 through 5; Option 2 is to put ads dollars in Site 6.
+* Build logistic regression model to understand the relationship between the "purchase" and the "imp" for treatment group.
+* Next, we calculate the cost and revenue of two options and compared them to make the final decision.
+```{r}
+star$cost_1to5 <- star$imp1to5*(25/1000)
+star$cost_6 <- star$imp_6*(20/1000)
+model_3 = glm(purchase ~ test+log(cost_1to5+0.0001)+log(cost_6+0.0001)+test*log(cost_1to5+0.0001)
+                 +test*log(cost_6 +0.0001),family="binomial" ,data = star)
+summary(model_3)
+```
+#### Option 1(Choose website 1 to 5):
+- Cost: $25 per thousand impressions
+- Every percentage increase in dollar invested: (0.13+0.025)*100% = 16%
+#### Option 2(Choose website 6):
+- Cost: $20 per thousand impressions
+- Every percentage increase in dollar invested: (0.03+0.024)*100% = 5%
+
+### We can see that investing in option 1(website 1 to 5) is more effective as it results in 16% compared to option 2(website 6) only increases by 5.4%. Hence, we would recommend to choose option 1: put its advertisting dollars in Sites 1 through 5.
+
+## Conclusion and Recommendation
+- We definitely recommend Star Digit Company to do online advertising. From the experiment, we can tell that their ads indeed increase the sales of purchases.
+- If the budget is not tight, we recommend to increase the frequency of ads, since there is a 7.35% increase in the odds of making a purchase based on our testing result.
+- If the budget is tight, option 1,which is to invest in website 1 to website 5, is preferred compared to website 6.
+
+
+
